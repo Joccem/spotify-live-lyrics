@@ -48,7 +48,7 @@ paru -S playerctl python-rich python-pyfiglet
 pipx install syncedlyrics
 
 # Download the script
-curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/jomar02/spotify-live-lyrics/main/spotify-live-lyrics.py
+curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/Joccem/spotify-live-lyrics/main/spotify-live-lyrics.py
 chmod +x ~/.local/bin/lyrics-live
 ```
 
@@ -62,7 +62,7 @@ sudo apt install playerctl python3-pip
 pip3 install --user rich pyfiglet syncedlyrics
 
 # Download the script
-curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/jomar02/spotify-live-lyrics/main/spotify-live-lyrics.py
+curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/Joccem/spotify-live-lyrics/main/spotify-live-lyrics.py
 chmod +x ~/.local/bin/lyrics-live
 ```
 
@@ -74,7 +74,7 @@ chmod +x ~/.local/bin/lyrics-live
 pip3 install --user rich pyfiglet syncedlyrics
 
 # Download and install script
-curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/jomar02/spotify-live-lyrics/main/spotify-live-lyrics.py
+curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/Joccem/spotify-live-lyrics/main/spotify-live-lyrics.py
 chmod +x ~/.local/bin/lyrics-live
 ```
 
