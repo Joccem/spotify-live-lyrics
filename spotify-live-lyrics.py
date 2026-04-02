@@ -54,11 +54,11 @@ from rich.panel import Panel
 TIMING_OFFSET_DEFAULT = 0.0
 
 # Nord color palette
-NORD_SNOW_STORM = "#D8DEE9"
+NORD_SNOW_STORM = "#89B4FA"  # Catppuccin Mocha Blue
 NORD_FROST_CYAN = "#88C0D0"
 NORD_FROST_BLUE = "#81A1C1"
-NORD_AURORA_YELLOW = "#EBCB8B"
-NORD3 = "#4C566A"  # Dark grey for context lines
+NORD_AURORA_YELLOW = "#CBA6F7"  # Catppuccin Mocha Mauve
+NORD3 = "#313244"  # Catppuccin Mocha Surface0
 
 # Global variable for live offset adjustment
 current_offset = TIMING_OFFSET_DEFAULT
