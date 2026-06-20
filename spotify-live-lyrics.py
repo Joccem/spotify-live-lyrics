@@ -18,7 +18,7 @@ import json
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
-from typing import List, Tuple, Optional
+from typing import Callable, List, Tuple, Optional
 
 # ============================================================================
 # DEPENDENCIES CHECK & AUTO-INSTALL
@@ -58,12 +58,16 @@ from rich.panel import Panel
 # Negative = show lyrics earlier, Positive = show lyrics later
 TIMING_OFFSET_DEFAULT = 0.0
 
-# Lyrics lookup timeout in seconds
-LYRICS_LOOKUP_TIMEOUT = 20
+# Lyrics lookup timeout in seconds. Keep individual lookups short so changing
+# songs does not leave the app stuck chasing lyrics for the previous track.
+LYRICS_LOOKUP_TIMEOUT = 8
 
 # Provider order for the syncedlyrics CLI fallback. LRCLIB is also queried
 # directly before this list so we can use structured Spotify metadata.
-LYRICS_PROVIDERS = ["lrclib", "musixmatch", "netease", "megalobiz", "genius"]
+# Musixmatch is intentionally excluded by default: it commonly returns noisy
+# 401 errors without credentials, and LRCLIB/Netease/Megalobiz/Genius are more
+# useful for obscure Swedish catalog tracks.
+LYRICS_PROVIDERS = ["lrclib", "netease", "megalobiz", "genius"]
 
 # Kanagawa Wave color palette
 KANAGAWA_FUJI_WHITE = "#DCD7BA"
@@ -147,6 +151,26 @@ def get_spotify_info() -> Optional[Tuple[str, str, float, Optional[float]]]:
         return artist, title, position, duration
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
         return None
+
+
+def same_song(left_artist: str, left_title: str, right_artist: str, right_title: str) -> bool:
+    """Compare Spotify song identity robustly enough for cancellation checks."""
+    return (left_artist.casefold(), left_title.casefold()) == (
+        right_artist.casefold(),
+        right_title.casefold(),
+    )
+
+
+def make_song_cancel_checker(artist: str, title: str) -> Callable[[], bool]:
+    """Return True when Spotify has moved away from the song being fetched."""
+    def is_cancelled() -> bool:
+        info = get_spotify_info()
+        if not info:
+            return False
+        current_artist, current_title, _, _ = info
+        return not same_song(current_artist, current_title, artist, title)
+
+    return is_cancelled
 
 
 # ============================================================================
@@ -235,9 +259,17 @@ def request_json(url: str, params: dict) -> Optional[object]:
         return None
 
 
-def fetch_lrclib_direct(artist: str, title: str, duration: Optional[float]) -> Optional[str]:
+def fetch_lrclib_direct(
+    artist: str,
+    title: str,
+    duration: Optional[float],
+    is_cancelled: Optional[Callable[[], bool]] = None,
+) -> Optional[str]:
     """Query LRCLIB directly with structured metadata before fuzzy CLI search."""
     clean_title = normalize_title(title)
+
+    if is_cancelled and is_cancelled():
+        return None
 
     exact_params = {"artist_name": artist, "track_name": clean_title}
     if duration:
@@ -256,6 +288,8 @@ def fetch_lrclib_direct(artist: str, title: str, duration: Optional[float]) -> O
             return pseudo
 
     for term in build_search_terms(artist, title):
+        if is_cancelled and is_cancelled():
+            return None
         results = request_json("https://lrclib.net/api/search", {"q": term})
         if not isinstance(results, list):
             continue
@@ -285,6 +319,7 @@ def run_syncedlyrics_cli(
     enhanced: bool = False,
     synced_only: bool = True,
     plain_only: bool = False,
+    log_errors: bool = False,
 ) -> Optional[str]:
     """Run syncedlyrics CLI for one search term/provider set."""
     command = ["syncedlyrics", search_term, "-p", *providers]
@@ -305,13 +340,18 @@ def run_syncedlyrics_cli(
     if result.returncode == 0 and result.stdout.strip():
         return result.stdout
 
-    if result.stderr.strip():
+    if log_errors and result.stderr.strip():
         console.print(f"[dim]syncedlyrics lookup failed for '{search_term}': {result.stderr.strip()}[/dim]")
 
     return None
 
 
-def fetch_synced_lyrics(artist: str, title: str, duration: Optional[float] = None) -> Optional[str]:
+def fetch_synced_lyrics(
+    artist: str,
+    title: str,
+    duration: Optional[float] = None,
+    is_cancelled: Optional[Callable[[], bool]] = None,
+) -> Optional[str]:
     """Fetch lyrics from LRCLIB and syncedlyrics providers with fallback search terms."""
     if not check_syncedlyrics():
         console.print("[red]Error: syncedlyrics command is not installed or not in PATH[/red]")
@@ -319,23 +359,19 @@ def fetch_synced_lyrics(artist: str, title: str, duration: Optional[float] = Non
         console.print("Then make sure uv's tool bin directory is in PATH: [cyan]uv tool update-shell[/cyan]")
         return None
 
-    lrclib_result = fetch_lrclib_direct(artist, title, duration)
+    lrclib_result = fetch_lrclib_direct(artist, title, duration, is_cancelled)
     if lrclib_result:
         return lrclib_result
 
     search_terms = build_search_terms(artist, title)
 
     try:
-        # Musixmatch is the only provider supporting enhanced word-level lyrics.
+        # Use quiet provider fallbacks. Failed providers are expected for obscure
+        # tracks; dumping every 401/404 just turns normal misses into terminal soup.
         for term in search_terms:
-            result = run_syncedlyrics_cli(term, ["musixmatch"], enhanced=True, synced_only=True)
-            if result:
-                console.print(f"[green]✓ Found enhanced synced lyrics via Musixmatch:[/green] [dim]{term}[/dim]")
-                return result
-
-        # Then use every syncedlyrics provider explicitly, including Netease,
-        # Megalobiz and Genius. This helps obscure/non-English tracks.
-        for term in search_terms:
+            if is_cancelled and is_cancelled():
+                console.print("[dim]Song changed while fetching lyrics; aborting stale lookup[/dim]")
+                return None
             result = run_syncedlyrics_cli(term, LYRICS_PROVIDERS, synced_only=True)
             if result:
                 console.print(f"[green]✓ Found synced lyrics via provider fallback:[/green] [dim]{term}[/dim]")
@@ -344,6 +380,9 @@ def fetch_synced_lyrics(artist: str, title: str, duration: Optional[float] = Non
         # Final fallback: plain lyrics. The UI needs timestamps, so estimate them.
         # This is intentionally last because it is not true synchronization.
         for term in search_terms:
+            if is_cancelled and is_cancelled():
+                console.print("[dim]Song changed while fetching lyrics; aborting stale lookup[/dim]")
+                return None
             result = run_syncedlyrics_cli(term, LYRICS_PROVIDERS, synced_only=False, plain_only=True)
             pseudo = plain_lyrics_to_lrc(result or "", duration)
             if pseudo:
@@ -527,8 +566,13 @@ def main():
 
         console.print(f"[cyan]Fetching lyrics for:[/cyan] [bold]{artist} - {title}[/bold]")
 
-        # Fetch lyrics
-        lrc_content = fetch_synced_lyrics(artist, title, duration)
+        # Fetch lyrics. Abort stale lookups if Spotify changes song mid-search.
+        is_cancelled = make_song_cancel_checker(artist, title)
+        lrc_content = fetch_synced_lyrics(artist, title, duration, is_cancelled)
+
+        if is_cancelled():
+            console.clear()
+            continue
 
         if not lrc_content:
             console.print("[red]No lyrics found for this song[/red]")

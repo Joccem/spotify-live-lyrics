@@ -13,7 +13,8 @@ A real-time synced lyrics display for Spotify with a Kanagawa Wave color theme.
 - **Live adjustment** - Fine-tune timing with Q/A keys (0.1s per press)
 - **Centered display** - Current line is always highlighted in the middle of the window
 - **Auto song detection** - Switches lyrics when you change songs
-- **Multi-source search** - Uses LRCLIB metadata search plus Musixmatch, Netease, Megalobiz and Genius fallbacks
+- **Multi-source search** - Uses LRCLIB metadata search plus Netease, Megalobiz and Genius fallbacks
+- **Stale lookup cancellation** - Stops searching for the old track when you change songs mid-lookup
 - **Plain lyrics fallback** - If synced lyrics are missing, plain lyrics can still be displayed with estimated timing
 - **Responsive** - Adapts to any terminal size
 
@@ -40,7 +41,7 @@ The highlighted line always stays in the vertical center of the terminal. Past l
 - **Python 3.8+**
 - **Spotify** (desktop app)
 - **playerctl** - for Spotify integration
-- **syncedlyrics** - CLI command for fetching lyrics from Musixmatch, LRCLIB, Netease, Megalobiz and Genius
+- **syncedlyrics** - CLI command for fetching lyrics from LRCLIB, Netease, Megalobiz and Genius
 - **rich** - for terminal UI rendering
 
 ## Installation
@@ -121,10 +122,10 @@ Edit the script to change default values:
 TIMING_OFFSET_DEFAULT = 0.0
 
 # Lyrics lookup timeout default (in seconds)
-LYRICS_LOOKUP_TIMEOUT = 20
+LYRICS_LOOKUP_TIMEOUT = 8
 
 # Provider fallback order
-LYRICS_PROVIDERS = ["lrclib", "musixmatch", "netease", "megalobiz", "genius"]
+LYRICS_PROVIDERS = ["lrclib", "netease", "megalobiz", "genius"]
 
 # Color scheme (Kanagawa Wave)
 KANAGAWA_CARP_YELLOW = "#E6C384"   # Current line highlight
@@ -161,7 +162,7 @@ Make sure Spotify is running and actually playing a song (not paused).
 
 1. **playerctl** monitors Spotify playback and returns the current artist, title, position and duration
 2. **LRCLIB** is queried directly with structured Spotify metadata for better exact matches
-3. **syncedlyrics** then searches Musixmatch, LRCLIB, Netease, Megalobiz and Genius with several normalized search terms
+3. **syncedlyrics** then searches LRCLIB, Netease, Megalobiz and Genius with several normalized search terms
 4. If only plain lyrics are found, the app converts them to coarse timestamped lines so they can still be displayed
 5. The script parses the `.lrc` timestamps and finds the line matching the current position
 6. **rich** renders the terminal UI: current line centered and highlighted in Kanagawa carp yellow, surrounding lines in Fuji white and wave blue
