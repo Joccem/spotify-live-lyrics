@@ -13,6 +13,8 @@ A real-time synced lyrics display for Spotify with a Kanagawa Wave color theme.
 - **Live adjustment** - Fine-tune timing with Q/A keys (0.1s per press)
 - **Centered display** - Current line is always highlighted in the middle of the window
 - **Auto song detection** - Switches lyrics when you change songs
+- **Multi-source search** - Uses LRCLIB metadata search plus Musixmatch, Netease, Megalobiz and Genius fallbacks
+- **Plain lyrics fallback** - If synced lyrics are missing, plain lyrics can still be displayed with estimated timing
 - **Responsive** - Adapts to any terminal size
 
 ## Preview
@@ -38,7 +40,7 @@ The highlighted line always stays in the vertical center of the terminal. Past l
 - **Python 3.8+**
 - **Spotify** (desktop app)
 - **playerctl** - for Spotify integration
-- **syncedlyrics** - CLI command for fetching lyrics
+- **syncedlyrics** - CLI command for fetching lyrics from Musixmatch, LRCLIB, Netease, Megalobiz and Genius
 - **rich** - for terminal UI rendering
 
 ## Installation
@@ -121,6 +123,9 @@ TIMING_OFFSET_DEFAULT = 0.0
 # Lyrics lookup timeout default (in seconds)
 LYRICS_LOOKUP_TIMEOUT = 20
 
+# Provider fallback order
+LYRICS_PROVIDERS = ["lrclib", "musixmatch", "netease", "megalobiz", "genius"]
+
 # Color scheme (Kanagawa Wave)
 KANAGAWA_CARP_YELLOW = "#E6C384"   # Current line highlight
 KANAGAWA_WAVE_BLUE_1 = "#223249"   # Previous/next line background
@@ -143,8 +148,8 @@ command -v syncedlyrics
 
 If `command -v syncedlyrics` prints nothing, restart the terminal or add uv's tool bin directory to `PATH`.
 
-### "No synced lyrics found"
-Not all songs have synced lyrics available. If `syncedlyrics` is installed correctly, the script will wait and retry when the song changes.
+### "No lyrics found"
+Not all songs have synced lyrics available. The app first tries synced lyrics, then falls back to plain lyrics with estimated timing when possible. If nothing is found, the track is probably missing from the configured providers.
 
 ### Lyrics are off-sync
 Use `Q` to make lyrics appear earlier, or `A` to make them appear later. Each press adjusts by 0.1 seconds.
@@ -154,11 +159,13 @@ Make sure Spotify is running and actually playing a song (not paused).
 
 ## How It Works
 
-1. **playerctl** monitors Spotify playback and returns the current artist, title, and position
-2. **syncedlyrics** fetches time-synced `.lrc` lyrics from online databases
-3. The script parses the `.lrc` timestamps and finds the line matching the current position
-4. **rich** renders the terminal UI: current line centered and highlighted in Kanagawa carp yellow, surrounding lines in Fuji white and wave blue
-5. The display refreshes at 10 FPS; offset adjustment compensates for timing differences
+1. **playerctl** monitors Spotify playback and returns the current artist, title, position and duration
+2. **LRCLIB** is queried directly with structured Spotify metadata for better exact matches
+3. **syncedlyrics** then searches Musixmatch, LRCLIB, Netease, Megalobiz and Genius with several normalized search terms
+4. If only plain lyrics are found, the app converts them to coarse timestamped lines so they can still be displayed
+5. The script parses the `.lrc` timestamps and finds the line matching the current position
+6. **rich** renders the terminal UI: current line centered and highlighted in Kanagawa carp yellow, surrounding lines in Fuji white and wave blue
+7. The display refreshes at 10 FPS; offset adjustment compensates for timing differences
 
 ## Contributing
 

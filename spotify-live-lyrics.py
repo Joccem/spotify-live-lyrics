@@ -14,6 +14,10 @@ import sys
 import re
 import threading
 import shutil
+import json
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
 from typing import List, Tuple, Optional
 
 # ============================================================================
@@ -57,6 +61,10 @@ TIMING_OFFSET_DEFAULT = 0.0
 # Lyrics lookup timeout in seconds
 LYRICS_LOOKUP_TIMEOUT = 20
 
+# Provider order for the syncedlyrics CLI fallback. LRCLIB is also queried
+# directly before this list so we can use structured Spotify metadata.
+LYRICS_PROVIDERS = ["lrclib", "musixmatch", "netease", "megalobiz", "genius"]
+
 # Kanagawa Wave color palette
 KANAGAWA_FUJI_WHITE = "#DCD7BA"
 KANAGAWA_CRYSTAL_BLUE = "#7E9CD8"
@@ -99,8 +107,8 @@ def check_syncedlyrics():
     return shutil.which("syncedlyrics") is not None
 
 
-def get_spotify_info() -> Optional[Tuple[str, str, float]]:
-    """Get artist, title and playback position from Spotify via playerctl"""
+def get_spotify_info() -> Optional[Tuple[str, str, float, Optional[float]]]:
+    """Get artist, title, playback position and duration from Spotify via playerctl."""
     try:
         artist = subprocess.check_output(
             ["playerctl", "-p", "spotify", "metadata", "artist"],
@@ -123,7 +131,20 @@ def get_spotify_info() -> Optional[Tuple[str, str, float]]:
 
         position = float(position_str)
 
-        return artist, title, position
+        duration = None
+        try:
+            # MPRIS reports length in microseconds. Some players omit it.
+            duration_str = subprocess.check_output(
+                ["playerctl", "-p", "spotify", "metadata", "mpris:length"],
+                stderr=subprocess.DEVNULL,
+                timeout=2
+            ).decode().strip()
+            if duration_str:
+                duration = int(duration_str) / 1_000_000
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
+            duration = None
+
+        return artist, title, position, duration
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
         return None
 
@@ -132,46 +153,206 @@ def get_spotify_info() -> Optional[Tuple[str, str, float]]:
 # LYRICS FETCHING & PARSING
 # ============================================================================
 
-def fetch_synced_lyrics(artist: str, title: str) -> Optional[str]:
-    """Fetch synced lyrics using syncedlyrics"""
+def format_lrc_timestamp(seconds: float) -> str:
+    """Format seconds as an LRC timestamp."""
+    seconds = max(0.0, seconds)
+    minutes = int(seconds // 60)
+    remainder = seconds - minutes * 60
+    whole_seconds = int(remainder)
+    centiseconds = int(round((remainder - whole_seconds) * 100))
+    if centiseconds == 100:
+        whole_seconds += 1
+        centiseconds = 0
+    return f"[{minutes:02d}:{whole_seconds:02d}.{centiseconds:02d}]"
+
+
+def plain_lyrics_to_lrc(plain_lyrics: str, duration: Optional[float]) -> Optional[str]:
+    """Convert plain lyrics to coarse timestamped LRC so the UI can display them."""
+    lines = [line.strip() for line in plain_lyrics.splitlines() if line.strip()]
+    lines = [line for line in lines if not re.match(r"^\d*Embed$", line, re.IGNORECASE)]
+    if not lines:
+        return None
+
+    # Leave some room before the first lyric. If duration is missing, use a rough
+    # reading pace. This is explicitly a fallback, not real synchronization.
+    if duration and duration > 20:
+        start_at = min(8.0, duration * 0.08)
+        usable_duration = max(1.0, duration - start_at - 5.0)
+        step = max(1.5, usable_duration / max(1, len(lines) - 1))
+    else:
+        start_at = 3.0
+        step = 3.0
+
+    return "\n".join(
+        f"{format_lrc_timestamp(start_at + i * step)} {line}"
+        for i, line in enumerate(lines)
+    )
+
+
+def normalize_title(title: str) -> str:
+    """Remove common streaming metadata noise from track titles."""
+    normalized = title.strip()
+    normalized = re.sub(r"\s*[-–—]\s*(remaster(?:ed)?|\d{4} remaster(?:ed)?|radio edit|single version|album version|live).*$", "", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s*[\[(](feat\.?|featuring|with|remaster(?:ed)?|live|radio edit|single version|album version).*?[\])]", "", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"\s+", " ", normalized).strip(" -–—")
+    return normalized or title.strip()
+
+
+def build_search_terms(artist: str, title: str) -> List[str]:
+    """Build increasingly loose search terms for obscure tracks."""
+    clean_title = normalize_title(title)
+    terms = [
+        f"{artist} {title}",
+        f"{artist} {clean_title}",
+        f"{clean_title} {artist}",
+        f"{title} {artist}",
+        clean_title,
+        title,
+    ]
+
+    deduped = []
+    seen = set()
+    for term in terms:
+        term = re.sub(r"\s+", " ", term).strip()
+        key = term.casefold()
+        if term and key not in seen:
+            deduped.append(term)
+            seen.add(key)
+    return deduped
+
+
+def request_json(url: str, params: dict) -> Optional[object]:
+    """Fetch JSON using only the standard library."""
+    full_url = f"{url}?{urlencode(params)}"
+    request = Request(
+        full_url,
+        headers={"User-Agent": "spotify-live-lyrics/1.0 (https://github.com/Joccem/spotify-live-lyrics)"},
+    )
+    try:
+        with urlopen(request, timeout=LYRICS_LOOKUP_TIMEOUT) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError):
+        return None
+
+
+def fetch_lrclib_direct(artist: str, title: str, duration: Optional[float]) -> Optional[str]:
+    """Query LRCLIB directly with structured metadata before fuzzy CLI search."""
+    clean_title = normalize_title(title)
+
+    exact_params = {"artist_name": artist, "track_name": clean_title}
+    if duration:
+        exact_params["duration"] = str(round(duration))
+
+    exact = request_json("https://lrclib.net/api/get", exact_params)
+    if isinstance(exact, dict):
+        synced = (exact.get("syncedLyrics") or "").strip()
+        if synced:
+            console.print("[green]✓ Found synced lyrics via LRCLIB exact metadata[/green]")
+            return synced
+        plain = (exact.get("plainLyrics") or "").strip()
+        pseudo = plain_lyrics_to_lrc(plain, duration)
+        if pseudo:
+            console.print("[yellow]Found plain lyrics via LRCLIB exact metadata; using estimated timing[/yellow]")
+            return pseudo
+
+    for term in build_search_terms(artist, title):
+        results = request_json("https://lrclib.net/api/search", {"q": term})
+        if not isinstance(results, list):
+            continue
+
+        # Prefer synced lyrics. LRCLIB search can return several nearby matches;
+        # obscure Swedish tracks often need the looser query variants above.
+        for track in results:
+            synced = (track.get("syncedLyrics") or "").strip()
+            if synced:
+                console.print(f"[green]✓ Found synced lyrics via LRCLIB search:[/green] [dim]{term}[/dim]")
+                return synced
+
+        for track in results:
+            plain = (track.get("plainLyrics") or "").strip()
+            pseudo = plain_lyrics_to_lrc(plain, duration)
+            if pseudo:
+                console.print(f"[yellow]Found plain lyrics via LRCLIB search; using estimated timing:[/yellow] [dim]{term}[/dim]")
+                return pseudo
+
+    return None
+
+
+def run_syncedlyrics_cli(
+    search_term: str,
+    providers: List[str],
+    *,
+    enhanced: bool = False,
+    synced_only: bool = True,
+    plain_only: bool = False,
+) -> Optional[str]:
+    """Run syncedlyrics CLI for one search term/provider set."""
+    command = ["syncedlyrics", search_term, "-p", *providers]
+    if enhanced:
+        command.append("--enhanced")
+    if synced_only:
+        command.append("--synced-only")
+    if plain_only:
+        command.append("--plain-only")
+
+    result = subprocess.run(
+        command,
+        capture_output=True,
+        text=True,
+        timeout=LYRICS_LOOKUP_TIMEOUT
+    )
+
+    if result.returncode == 0 and result.stdout.strip():
+        return result.stdout
+
+    if result.stderr.strip():
+        console.print(f"[dim]syncedlyrics lookup failed for '{search_term}': {result.stderr.strip()}[/dim]")
+
+    return None
+
+
+def fetch_synced_lyrics(artist: str, title: str, duration: Optional[float] = None) -> Optional[str]:
+    """Fetch lyrics from LRCLIB and syncedlyrics providers with fallback search terms."""
     if not check_syncedlyrics():
         console.print("[red]Error: syncedlyrics command is not installed or not in PATH[/red]")
         console.print("Install it with: [cyan]uv tool install syncedlyrics[/cyan]")
         console.print("Then make sure uv's tool bin directory is in PATH: [cyan]uv tool update-shell[/cyan]")
         return None
 
+    lrclib_result = fetch_lrclib_direct(artist, title, duration)
+    if lrclib_result:
+        return lrclib_result
+
+    search_terms = build_search_terms(artist, title)
+
     try:
-        # Try with enhanced format first
-        result = subprocess.run(
-            ["syncedlyrics", f"{artist} {title}", "--enhanced"],
-            capture_output=True,
-            text=True,
-            timeout=LYRICS_LOOKUP_TIMEOUT
-        )
+        # Musixmatch is the only provider supporting enhanced word-level lyrics.
+        for term in search_terms:
+            result = run_syncedlyrics_cli(term, ["musixmatch"], enhanced=True, synced_only=True)
+            if result:
+                console.print(f"[green]✓ Found enhanced synced lyrics via Musixmatch:[/green] [dim]{term}[/dim]")
+                return result
 
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout
+        # Then use every syncedlyrics provider explicitly, including Netease,
+        # Megalobiz and Genius. This helps obscure/non-English tracks.
+        for term in search_terms:
+            result = run_syncedlyrics_cli(term, LYRICS_PROVIDERS, synced_only=True)
+            if result:
+                console.print(f"[green]✓ Found synced lyrics via provider fallback:[/green] [dim]{term}[/dim]")
+                return result
 
-        if result.stderr.strip():
-            console.print(f"[dim]syncedlyrics enhanced lookup failed: {result.stderr.strip()}[/dim]")
-
-        # Fallback to standard format
-        result = subprocess.run(
-            ["syncedlyrics", f"{artist} {title}"],
-            capture_output=True,
-            text=True,
-            timeout=LYRICS_LOOKUP_TIMEOUT
-        )
-
-        if result.returncode == 0 and result.stdout.strip():
-            return result.stdout
-
-        if result.stderr.strip():
-            console.print(f"[dim]syncedlyrics lookup failed: {result.stderr.strip()}[/dim]")
+        # Final fallback: plain lyrics. The UI needs timestamps, so estimate them.
+        # This is intentionally last because it is not true synchronization.
+        for term in search_terms:
+            result = run_syncedlyrics_cli(term, LYRICS_PROVIDERS, synced_only=False, plain_only=True)
+            pseudo = plain_lyrics_to_lrc(result or "", duration)
+            if pseudo:
+                console.print(f"[yellow]Found plain lyrics via provider fallback; using estimated timing:[/yellow] [dim]{term}[/dim]")
+                return pseudo
 
         return None
     except subprocess.TimeoutExpired:
-        console.print("[red]Timed out while fetching synced lyrics[/red]")
+        console.print("[red]Timed out while fetching lyrics[/red]")
         return None
 
 
@@ -342,15 +523,15 @@ def main():
             console.clear()
             continue
 
-        artist, title, _ = info
+        artist, title, _, duration = info
 
         console.print(f"[cyan]Fetching lyrics for:[/cyan] [bold]{artist} - {title}[/bold]")
 
         # Fetch lyrics
-        lrc_content = fetch_synced_lyrics(artist, title)
+        lrc_content = fetch_synced_lyrics(artist, title, duration)
 
         if not lrc_content:
-            console.print("[red]No synced lyrics found for this song[/red]")
+            console.print("[red]No lyrics found for this song[/red]")
             console.print("[dim]Trying next song in 5 seconds...[/dim]")
             time.sleep(5)
             console.clear()
@@ -393,7 +574,7 @@ def main():
                         time.sleep(1)
                         continue
 
-                    new_artist, new_title, position = current_info
+                    new_artist, new_title, position, _ = current_info
 
                     # Handle song change
                     if (new_artist, new_title) != current_song:
