@@ -1,15 +1,15 @@
 # Spotify Live Lyrics 🎵
 
-A real-time synced lyrics display for Spotify with a Catppuccin Mocha color theme.
+A real-time synced lyrics display for Spotify with a Kanagawa Wave color theme.
 
-![Catppuccin](https://img.shields.io/badge/theme-Catppuccin_Mocha-CBA6F7)
+![Kanagawa](https://img.shields.io/badge/theme-Kanagawa_Wave-E6C384)
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
 ![Python](https://img.shields.io/badge/python-3.8+-green)
 
 ## Features
 
 - **Real-time sync** - Lyrics update smoothly as the song plays
-- **Catppuccin Mocha theme** - Mauve highlight, blue context lines
+- **Kanagawa Wave theme** - warm yellow highlight, muted blue context lines
 - **Live adjustment** - Fine-tune timing with Q/A keys (0.1s per press)
 - **Centered display** - Current line is always highlighted in the middle of the window
 - **Auto song detection** - Switches lyrics when you change songs
@@ -23,9 +23,9 @@ A real-time synced lyrics display for Spotify with a Catppuccin Mocha color them
 
                   ...earlier lyrics...
                   a faded past line
-                  the line before current        <- blue on dark blue
-♪♪              Current lyric line              ♪♪  <- mauve highlight
-                  the line after current         <- blue on dark blue
+                  the line before current        <- Fuji white on wave blue
+♪♪              Current lyric line              ♪♪  <- carp yellow highlight
+                  the line after current         <- Fuji white on wave blue
                   upcoming line
                   ...more upcoming lines...
 ```
@@ -121,10 +121,10 @@ TIMING_OFFSET_DEFAULT = 0.0
 # Lyrics lookup timeout default (in seconds)
 LYRICS_LOOKUP_TIMEOUT = 20
 
-# Color scheme (Catppuccin Mocha)
-NORD_AURORA_YELLOW = "#CBA6F7"  # Mauve - current line highlight
-NORD3 = "#313244"               # Surface0 - previous/next line background
-NORD_SNOW_STORM = "#89B4FA"     # Blue - previous/next line text
+# Color scheme (Kanagawa Wave)
+KANAGAWA_CARP_YELLOW = "#E6C384"   # Current line highlight
+KANAGAWA_WAVE_BLUE_1 = "#223249"   # Previous/next line background
+KANAGAWA_FUJI_WHITE = "#DCD7BA"    # Previous/next and future line text
 ```
 
 ## Troubleshooting
@@ -157,7 +157,7 @@ Make sure Spotify is running and actually playing a song (not paused).
 1. **playerctl** monitors Spotify playback and returns the current artist, title, and position
 2. **syncedlyrics** fetches time-synced `.lrc` lyrics from online databases
 3. The script parses the `.lrc` timestamps and finds the line matching the current position
-4. **rich** renders the terminal UI: current line centered and highlighted in mauve, surrounding lines in blue
+4. **rich** renders the terminal UI: current line centered and highlighted in Kanagawa carp yellow, surrounding lines in Fuji white and wave blue
 5. The display refreshes at 10 FPS; offset adjustment compensates for timing differences
 
 ## Contributing
@@ -175,7 +175,7 @@ Contributions welcome:
 ## Credits
 
 - Built by **Jocce** with assistance from **Claude (Anthropic)**
-- Uses the [Catppuccin](https://github.com/catppuccin/catppuccin) Mocha color palette
+- Uses the [Kanagawa](https://github.com/rebelot/kanagawa.nvim) Wave color palette
 - Lyrics fetched via [syncedlyrics](https://github.com/moehmeni/syncedlyrics)
 
 ## License

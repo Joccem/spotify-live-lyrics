@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Spotify Live Lyrics Viewer
-A beautiful, real-time synced lyrics display for Spotify with Nord theme
+A beautiful, real-time synced lyrics display for Spotify with Kanagawa theme
 
 Author: Jocce (with Claude)
 License: MIT
@@ -57,12 +57,12 @@ TIMING_OFFSET_DEFAULT = 0.0
 # Lyrics lookup timeout in seconds
 LYRICS_LOOKUP_TIMEOUT = 20
 
-# Nord color palette
-NORD_SNOW_STORM = "#89B4FA"  # Catppuccin Mocha Blue
-NORD_FROST_CYAN = "#88C0D0"
-NORD_FROST_BLUE = "#81A1C1"
-NORD_AURORA_YELLOW = "#CBA6F7"  # Catppuccin Mocha Mauve
-NORD3 = "#313244"  # Catppuccin Mocha Surface0
+# Kanagawa Wave color palette
+KANAGAWA_FUJI_WHITE = "#DCD7BA"
+KANAGAWA_CRYSTAL_BLUE = "#7E9CD8"
+KANAGAWA_SPRING_BLUE = "#7AA89F"
+KANAGAWA_CARP_YELLOW = "#E6C384"
+KANAGAWA_WAVE_BLUE_1 = "#223249"
 
 # Global variable for live offset adjustment
 current_offset = TIMING_OFFSET_DEFAULT
@@ -265,12 +265,12 @@ def render_lyrics(lyrics: List[LyricsLine], current_index: int,
     # Title
     title_line = f"🎵 {artist} - {title}"
     text.append(title_line.center(console_width) + "\n",
-               style=f"bold {NORD_FROST_CYAN}")
+               style=f"bold {KANAGAWA_SPRING_BLUE}")
 
     # Controls hint
     controls = f"[Offset: {current_offset:+.1f}s | Q=earlier A=later Z=reset X=exit]"
     text.append(controls.center(console_width) + "\n\n",
-               style=f"dim {NORD_FROST_BLUE}")
+               style=f"dim {KANAGAWA_CRYSTAL_BLUE}")
 
     for i in range(current_index - lines_above, current_index + lines_below + 1):
         # Pad with blank lines when outside lyrics range
@@ -283,28 +283,28 @@ def render_lyrics(lyrics: List[LyricsLine], current_index: int,
         if i < current_index - 1:
             # Past lines - faded
             text.append(line.text.center(console_width) + "\n",
-                       style=f"dim {NORD_FROST_BLUE}")
+                       style=f"dim {KANAGAWA_CRYSTAL_BLUE}")
 
         elif i == current_index - 1:
-            # Previous line - grey background
+            # Previous line - wave blue background
             text.append(line.text.center(console_width) + "\n",
-                       style=f"{NORD_SNOW_STORM} on {NORD3}")
+                       style=f"{KANAGAWA_FUJI_WHITE} on {KANAGAWA_WAVE_BLUE_1}")
 
         elif i == current_index:
             # CURRENT line - yellow background, bold, centered
             line_content = f"♪♪  {line.text}  ♪♪"
             text.append(line_content.center(console_width) + "\n",
-                       style=f"bold black on {NORD_AURORA_YELLOW}")
+                       style=f"bold black on {KANAGAWA_CARP_YELLOW}")
 
         elif i == current_index + 1:
-            # Next line - grey background
+            # Next line - wave blue background
             text.append(line.text.center(console_width) + "\n",
-                       style=f"{NORD_SNOW_STORM} on {NORD3}")
+                       style=f"{KANAGAWA_FUJI_WHITE} on {KANAGAWA_WAVE_BLUE_1}")
 
         else:
             # Future lines - normal
             text.append(line.text.center(console_width) + "\n",
-                       style=NORD_SNOW_STORM)
+                       style=KANAGAWA_FUJI_WHITE)
 
     return text
 
