@@ -38,7 +38,7 @@ The highlighted line always stays in the vertical center of the terminal. Past l
 - **Python 3.8+**
 - **Spotify** (desktop app)
 - **playerctl** - for Spotify integration
-- **syncedlyrics** - for fetching lyrics
+- **syncedlyrics** - CLI command for fetching lyrics
 - **rich** - for terminal UI rendering
 
 ## Installation
@@ -49,13 +49,16 @@ The highlighted line always stays in the vertical center of the terminal. Past l
 # Install system dependencies
 paru -S playerctl python-rich
 
-# Install syncedlyrics
-pipx install syncedlyrics
+# Install syncedlyrics as a standalone CLI tool
+uv tool install syncedlyrics
+uv tool update-shell
 
 # Download the script
-curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/jomar02/spotify-live-lyrics/main/spotify-live-lyrics.py
+curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/Joccem/spotify-live-lyrics/main/spotify-live-lyrics.py
 chmod +x ~/.local/bin/lyrics-live
 ```
+
+Restart your shell after `uv tool update-shell`, or make sure uv's tool bin directory is in your `PATH`.
 
 ### Ubuntu / Debian
 
@@ -63,11 +66,14 @@ chmod +x ~/.local/bin/lyrics-live
 # Install system dependencies
 sudo apt install playerctl python3-pip
 
-# Install Python packages
-pip3 install --user rich syncedlyrics
+# Install rich and syncedlyrics
+python3 -m pip install --user rich
+python3 -m pip install --user pipx
+python3 -m pipx ensurepath
+pipx install syncedlyrics
 
 # Download the script
-curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/jomar02/spotify-live-lyrics/main/spotify-live-lyrics.py
+curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/Joccem/spotify-live-lyrics/main/spotify-live-lyrics.py
 chmod +x ~/.local/bin/lyrics-live
 ```
 
@@ -75,11 +81,12 @@ chmod +x ~/.local/bin/lyrics-live
 
 ```bash
 # Install playerctl (check your package manager)
-# Then install Python packages
-pip3 install --user rich syncedlyrics
+# Then install rich and the syncedlyrics CLI
+python3 -m pip install --user rich
+pipx install syncedlyrics
 
 # Download and install script
-curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/jomar02/spotify-live-lyrics/main/spotify-live-lyrics.py
+curl -o ~/.local/bin/lyrics-live https://raw.githubusercontent.com/Joccem/spotify-live-lyrics/main/spotify-live-lyrics.py
 chmod +x ~/.local/bin/lyrics-live
 ```
 
@@ -111,6 +118,9 @@ Edit the script to change default values:
 # Timing offset default (in seconds)
 TIMING_OFFSET_DEFAULT = 0.0
 
+# Lyrics lookup timeout default (in seconds)
+LYRICS_LOOKUP_TIMEOUT = 20
+
 # Color scheme (Catppuccin Mocha)
 NORD_AURORA_YELLOW = "#CBA6F7"  # Mauve - current line highlight
 NORD3 = "#313244"               # Surface0 - previous/next line background
@@ -122,8 +132,19 @@ NORD_SNOW_STORM = "#89B4FA"     # Blue - previous/next line text
 ### "playerctl is not installed"
 Install playerctl using your package manager (see Installation section).
 
+### "syncedlyrics command is not installed or not in PATH"
+Install the `syncedlyrics` CLI and make sure the installed command is visible in your shell:
+
+```bash
+uv tool install syncedlyrics
+uv tool update-shell
+command -v syncedlyrics
+```
+
+If `command -v syncedlyrics` prints nothing, restart the terminal or add uv's tool bin directory to `PATH`.
+
 ### "No synced lyrics found"
-Not all songs have synced lyrics available. The script will wait and retry when the song changes.
+Not all songs have synced lyrics available. If `syncedlyrics` is installed correctly, the script will wait and retry when the song changes.
 
 ### Lyrics are off-sync
 Use `Q` to make lyrics appear earlier, or `A` to make them appear later. Each press adjusts by 0.1 seconds.

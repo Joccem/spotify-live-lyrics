@@ -13,6 +13,7 @@ import time
 import sys
 import re
 import threading
+import shutil
 from typing import List, Tuple, Optional
 
 # ============================================================================
@@ -20,7 +21,7 @@ from typing import List, Tuple, Optional
 # ============================================================================
 
 def check_dependencies():
-    """Check and install required dependencies"""
+    """Check required Python modules."""
     missing = []
 
     try:
@@ -32,9 +33,9 @@ def check_dependencies():
         missing.append('rich')
 
     if missing:
-        print(f"Installing missing dependencies: {', '.join(missing)}")
-        print("Please run: pip install --user " + ' '.join(missing))
-        print("Or on Arch: paru -S " + ' '.join([f'python-{p}' for p in missing]))
+        print(f"Missing Python dependencies: {', '.join(missing)}")
+        print("Install them in your project virtual environment, or on Arch with:")
+        print("paru -S " + ' '.join([f'python-{p}' for p in missing]))
         sys.exit(1)
 
 check_dependencies()
@@ -52,6 +53,9 @@ from rich.panel import Panel
 # Timing offset in seconds - adjustable with Q (earlier) and A (later)
 # Negative = show lyrics earlier, Positive = show lyrics later
 TIMING_OFFSET_DEFAULT = 0.0
+
+# Lyrics lookup timeout in seconds
+LYRICS_LOOKUP_TIMEOUT = 20
 
 # Nord color palette
 NORD_SNOW_STORM = "#89B4FA"  # Catppuccin Mocha Blue
@@ -90,6 +94,11 @@ def check_playerctl():
         return False
 
 
+def check_syncedlyrics():
+    """Check if the syncedlyrics CLI is installed and available in PATH."""
+    return shutil.which("syncedlyrics") is not None
+
+
 def get_spotify_info() -> Optional[Tuple[str, str, float]]:
     """Get artist, title and playback position from Spotify via playerctl"""
     try:
@@ -125,28 +134,44 @@ def get_spotify_info() -> Optional[Tuple[str, str, float]]:
 
 def fetch_synced_lyrics(artist: str, title: str) -> Optional[str]:
     """Fetch synced lyrics using syncedlyrics"""
+    if not check_syncedlyrics():
+        console.print("[red]Error: syncedlyrics command is not installed or not in PATH[/red]")
+        console.print("Install it with: [cyan]uv tool install syncedlyrics[/cyan]")
+        console.print("Then make sure uv's tool bin directory is in PATH: [cyan]uv tool update-shell[/cyan]")
+        return None
+
     try:
         # Try with enhanced format first
         result = subprocess.run(
             ["syncedlyrics", f"{artist} {title}", "--enhanced"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=LYRICS_LOOKUP_TIMEOUT
         )
 
-        if result.returncode == 0 and result.stdout:
+        if result.returncode == 0 and result.stdout.strip():
             return result.stdout
+
+        if result.stderr.strip():
+            console.print(f"[dim]syncedlyrics enhanced lookup failed: {result.stderr.strip()}[/dim]")
 
         # Fallback to standard format
         result = subprocess.run(
             ["syncedlyrics", f"{artist} {title}"],
             capture_output=True,
             text=True,
-            timeout=10
+            timeout=LYRICS_LOOKUP_TIMEOUT
         )
 
-        return result.stdout if result.returncode == 0 else None
-    except (subprocess.TimeoutExpired, FileNotFoundError):
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout
+
+        if result.stderr.strip():
+            console.print(f"[dim]syncedlyrics lookup failed: {result.stderr.strip()}[/dim]")
+
+        return None
+    except subprocess.TimeoutExpired:
+        console.print("[red]Timed out while fetching synced lyrics[/red]")
         return None
 
 
@@ -296,6 +321,12 @@ def main():
     if not check_playerctl():
         console.print("[red]Error: playerctl is not installed[/red]")
         console.print("Install it with: [cyan]paru -S playerctl[/cyan]")
+        sys.exit(1)
+
+    if not check_syncedlyrics():
+        console.print("[red]Error: syncedlyrics command is not installed or not in PATH[/red]")
+        console.print("Install it with: [cyan]uv tool install syncedlyrics[/cyan]")
+        console.print("Then make sure uv's tool bin directory is in PATH: [cyan]uv tool update-shell[/cyan]")
         sys.exit(1)
 
     console.clear()
